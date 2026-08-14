@@ -18,25 +18,12 @@ pipeline {
                 sh '''
                     set -e
 
-                    if [ -f "backend/Dockerfile" ]; then
-                        CONTEXT="backend"
-
-                    elif [ -f "Dockerfile" ]; then
-                        CONTEXT="."
-
-                    else
-                        echo "ERROR: Backend Dockerfile not found."
-                        echo "Repository structure:"
-                        find . -maxdepth 3 -type f | sort
-                        exit 1
-                    fi
-
-                    echo "Backend build context: $CONTEXT"
+                    echo "Building FastAPI Backend..."
 
                     docker build \
                       -t ${BACKEND_ACR}/${BACKEND_REPO}:${IMAGE_TAG} \
                       -t ${BACKEND_ACR}/${BACKEND_REPO}:latest \
-                      "$CONTEXT"
+                      ./fastapi_mognodb
                 '''
             }
         }
@@ -46,22 +33,12 @@ pipeline {
                 sh '''
                     set -e
 
-                    if [ -f "frontend/Dockerfile" ]; then
-                        CONTEXT="frontend"
-
-                    else
-                        echo "ERROR: Frontend Dockerfile not found."
-                        echo "Repository structure:"
-                        find . -maxdepth 3 -type f | sort
-                        exit 1
-                    fi
-
-                    echo "Frontend build context: $CONTEXT"
+                    echo "Building Frontend..."
 
                     docker build \
                       -t ${FRONTEND_ACR}/${FRONTEND_REPO}:${IMAGE_TAG} \
                       -t ${FRONTEND_ACR}/${FRONTEND_REPO}:latest \
-                      "$CONTEXT"
+                      ./aman-tour-travels
                 '''
             }
         }
@@ -74,10 +51,6 @@ pipeline {
                     echo "Logging into Azure using Managed Identity..."
 
                     az login --identity
-
-                    az account show \
-                      --query "{subscription:id,tenant:tenantId}" \
-                      -o table
                 '''
             }
         }
@@ -89,8 +62,7 @@ pipeline {
 
                     echo "Logging into Backend ACR..."
 
-                    az acr login \
-                      --name backenddivay
+                    az acr login --name backenddivay
                 '''
             }
         }
@@ -102,15 +74,9 @@ pipeline {
 
                     FRONTEND_ACR_NAME="${FRONTEND_ACR%%.azurecr.io}"
 
-                    if [ "$FRONTEND_ACR_NAME" = "frontenddivay" ]; then
-                        echo "ERROR: Set your actual frontend ACR name."
-                        exit 1
-                    fi
-
                     echo "Logging into Frontend ACR..."
 
-                    az acr login \
-                      --name "$FRONTEND_ACR_NAME"
+                    az acr login --name "$FRONTEND_ACR_NAME"
                 '''
             }
         }
@@ -149,7 +115,6 @@ pipeline {
     }
 
     post {
-
         success {
             echo '''
             ============================================
