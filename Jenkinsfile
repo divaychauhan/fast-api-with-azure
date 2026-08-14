@@ -5,40 +5,38 @@ pipeline {
         BACKEND_ACR  = 'backenddivay.azurecr.io'
         FRONTEND_ACR = 'frontenddivay.azurecr.io'
 
-        BACKEND_IMAGE  = "${BACKEND_ACR}/backend"
-        FRONTEND_IMAGE = "${FRONTEND_ACR}/frontend"
+        BACKEND_REPO  = 'backend'
+        FRONTEND_REPO = 'frontend'
 
         IMAGE_TAG = "${BUILD_NUMBER}"
     }
 
     stages {
 
-        stage('Checkout') {
-            steps {
-                checkout scm
-            }
-        }
-
-        stage('Backend Test') {
-            steps {
-                sh '''
-                    echo "Running backend tests..."
-                    # Add your actual test command here
-                    # Example:
-                    # cd backend
-                    # pip install -r requirements.txt
-                    # pytest
-                '''
-            }
-        }
-
         stage('Build Backend Image') {
             steps {
                 sh '''
+                    set -e
+
+                    if [ -f "backend/Dockerfile" ]; then
+                        CONTEXT="backend"
+
+                    elif [ -f "Dockerfile" ]; then
+                        CONTEXT="."
+
+                    else
+                        echo "ERROR: Backend Dockerfile not found."
+                        echo "Repository structure:"
+                        find . -maxdepth 3 -type f | sort
+                        exit 1
+                    fi
+
+                    echo "Backend build context: $CONTEXT"
+
                     docker build \
-                      -t ${BACKEND_IMAGE}:${IMAGE_TAG} \
-                      -t ${BACKEND_IMAGE}:latest \
-                      ./backend
+                      -t ${BACKEND_ACR}/${BACKEND_REPO}:${IMAGE_TAG} \
+                      -t ${BACKEND_ACR}/${BACKEND_REPO}:latest \
+                      "$CONTEXT"
                 '''
             }
         }
@@ -46,18 +44,40 @@ pipeline {
         stage('Build Frontend Image') {
             steps {
                 sh '''
+                    set -e
+
+                    if [ -f "frontend/Dockerfile" ]; then
+                        CONTEXT="frontend"
+
+                    else
+                        echo "ERROR: Frontend Dockerfile not found."
+                        echo "Repository structure:"
+                        find . -maxdepth 3 -type f | sort
+                        exit 1
+                    fi
+
+                    echo "Frontend build context: $CONTEXT"
+
                     docker build \
-                      -t ${FRONTEND_IMAGE}:${IMAGE_TAG} \
-                      -t ${FRONTEND_IMAGE}:latest \
-                      ./frontend
+                      -t ${FRONTEND_ACR}/${FRONTEND_REPO}:${IMAGE_TAG} \
+                      -t ${FRONTEND_ACR}/${FRONTEND_REPO}:latest \
+                      "$CONTEXT"
                 '''
             }
         }
 
-        stage('Login to Azure') {
+        stage('Azure Login') {
             steps {
                 sh '''
+                    set -e
+
+                    echo "Logging into Azure using Managed Identity..."
+
                     az login --identity
+
+                    az account show \
+                      --query "{subscription:id,tenant:tenantId}" \
+                      -o table
                 '''
             }
         }
@@ -65,7 +85,12 @@ pipeline {
         stage('Login to Backend ACR') {
             steps {
                 sh '''
-                    az acr login --name backenddivay
+                    set -e
+
+                    echo "Logging into Backend ACR..."
+
+                    az acr login \
+                      --name backenddivay
                 '''
             }
         }
@@ -73,7 +98,19 @@ pipeline {
         stage('Login to Frontend ACR') {
             steps {
                 sh '''
-                    az acr login --name frontenddivay
+                    set -e
+
+                    FRONTEND_ACR_NAME="${FRONTEND_ACR%%.azurecr.io}"
+
+                    if [ "$FRONTEND_ACR_NAME" = "frontenddivay" ]; then
+                        echo "ERROR: Set your actual frontend ACR name."
+                        exit 1
+                    fi
+
+                    echo "Logging into Frontend ACR..."
+
+                    az acr login \
+                      --name "$FRONTEND_ACR_NAME"
                 '''
             }
         }
@@ -81,8 +118,15 @@ pipeline {
         stage('Push Backend Image') {
             steps {
                 sh '''
-                    docker push ${BACKEND_IMAGE}:${IMAGE_TAG}
-                    docker push ${BACKEND_IMAGE}:latest
+                    set -e
+
+                    echo "Pushing Backend image..."
+
+                    docker push \
+                      ${BACKEND_ACR}/${BACKEND_REPO}:${IMAGE_TAG}
+
+                    docker push \
+                      ${BACKEND_ACR}/${BACKEND_REPO}:latest
                 '''
             }
         }
@@ -90,20 +134,42 @@ pipeline {
         stage('Push Frontend Image') {
             steps {
                 sh '''
-                    docker push ${FRONTEND_IMAGE}:${IMAGE_TAG}
-                    docker push ${FRONTEND_IMAGE}:latest
+                    set -e
+
+                    echo "Pushing Frontend image..."
+
+                    docker push \
+                      ${FRONTEND_ACR}/${FRONTEND_REPO}:${IMAGE_TAG}
+
+                    docker push \
+                      ${FRONTEND_ACR}/${FRONTEND_REPO}:latest
                 '''
             }
         }
     }
 
     post {
+
         success {
-            echo 'CI/CD: Images successfully pushed to ACR.'
+            echo '''
+            ============================================
+            CI/CD SUCCESS
+            Backend and Frontend images pushed to ACR.
+            ============================================
+            '''
         }
 
         failure {
-            echo 'CI/CD: Pipeline failed.'
+            echo '''
+            ============================================
+            CI/CD FAILED
+            Check the failed stage above.
+            ============================================
+            '''
+        }
+
+        always {
+            sh 'docker image prune -f || true'
         }
     }
 }
