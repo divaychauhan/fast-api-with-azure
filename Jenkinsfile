@@ -113,7 +113,72 @@ pipeline {
             }
         }
     }
+        stage('Deploy to App VM') {
+    steps {
+        sshagent(['app-vm-ssh']) {
+            sh '''
+                set -e
 
+                echo "Connecting to App VM..."
+
+                ssh -o StrictHostKeyChecking=no \
+                    azureuser@10.0.2.4 << 'EOF'
+
+                set -e
+
+                echo "===== APP VM DEPLOYMENT ====="
+
+                echo "Logging into Azure..."
+                az login --identity
+
+                echo "Logging into Backend ACR..."
+                az acr login --name backenddivay
+
+                echo "Logging into Frontend ACR..."
+                az acr login --name frontenddivay
+
+                echo "Pulling Backend image..."
+                docker pull backenddivay.azurecr.io/backend:latest
+
+                echo "Pulling Frontend image..."
+                docker pull frontenddivay.azurecr.io/frontend:latest
+
+                echo "Stopping old Backend container..."
+                docker stop backend || true
+
+                echo "Removing old Backend container..."
+                docker rm backend || true
+
+                echo "Stopping old Frontend container..."
+                docker stop frontend || true
+
+                echo "Removing old Frontend container..."
+                docker rm frontend || true
+
+                echo "Starting Backend..."
+                docker run -d \
+                    --name backend \
+                    --restart unless-stopped \
+                    -p 8000:8000 \
+                    backenddivay.azurecr.io/backend:latest
+
+                echo "Starting Frontend..."
+                docker run -d \
+                    --name frontend \
+                    --restart unless-stopped \
+                    -p 80:80 \
+                    frontenddivay.azurecr.io/frontend:latest
+
+                echo "===== CONTAINERS ====="
+                docker ps
+
+                echo "===== DEPLOYMENT SUCCESSFUL ====="
+
+                EOF
+            '''
+        }
+    }
+}
     post {
         success {
             echo '''
