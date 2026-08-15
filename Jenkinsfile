@@ -17,8 +17,7 @@ pipeline {
             steps {
                 sh '''
                     set -e
-
-                    echo "Building FastAPI Backend..."
+                    echo "===== Building FastAPI Backend ====="
 
                     docker build \
                       -t ${BACKEND_ACR}/${BACKEND_REPO}:${IMAGE_TAG} \
@@ -32,8 +31,7 @@ pipeline {
             steps {
                 sh '''
                     set -e
-
-                    echo "Building Frontend..."
+                    echo "===== Building Frontend ====="
 
                     docker build \
                       -t ${FRONTEND_ACR}/${FRONTEND_REPO}:${IMAGE_TAG} \
@@ -47,9 +45,7 @@ pipeline {
             steps {
                 sh '''
                     set -e
-
-                    echo "Logging into Azure using Managed Identity..."
-
+                    echo "===== Azure Login ====="
                     az login --identity
                 '''
             }
@@ -59,9 +55,6 @@ pipeline {
             steps {
                 sh '''
                     set -e
-
-                    echo "Logging into Backend ACR..."
-
                     az acr login --name backenddivay
                 '''
             }
@@ -71,12 +64,7 @@ pipeline {
             steps {
                 sh '''
                     set -e
-
-                    FRONTEND_ACR_NAME="${FRONTEND_ACR%%.azurecr.io}"
-
-                    echo "Logging into Frontend ACR..."
-
-                    az acr login --name "$FRONTEND_ACR_NAME"
+                    az acr login --name frontenddivay
                 '''
             }
         }
@@ -85,8 +73,7 @@ pipeline {
             steps {
                 sh '''
                     set -e
-
-                    echo "Pushing Backend image..."
+                    echo "===== Pushing Backend Image ====="
 
                     docker push \
                       ${BACKEND_ACR}/${BACKEND_REPO}:${IMAGE_TAG}
@@ -101,8 +88,7 @@ pipeline {
             steps {
                 sh '''
                     set -e
-
-                    echo "Pushing Frontend image..."
+                    echo "===== Pushing Frontend Image ====="
 
                     docker push \
                       ${FRONTEND_ACR}/${FRONTEND_REPO}:${IMAGE_TAG}
@@ -115,89 +101,39 @@ pipeline {
 
         stage('Deploy to App VM') {
             steps {
-                sshagent(['app-vm-ssh']) {
-
-                    sh '''
-                        set -e
-
-                        echo "Connecting to App VM..."
-
-                        ssh -o StrictHostKeyChecking=no \
-                            azureuser@10.0.2.4 << 'EOF'
-
-                        set -e
-
-                        echo "================================"
-                        echo " APP VM DEPLOYMENT STARTED"
-                        echo "================================"
-
-                        echo "Logging into Azure..."
-                        az login --identity
-
-                        echo "Logging into Backend ACR..."
-                        az acr login --name backenddivay
-
-                        echo "Logging into Frontend ACR..."
-                        az acr login --name frontenddivay
-
-                        echo "Pulling Backend image..."
-                        docker pull backenddivay.azurecr.io/backend:latest
-
-                        echo "Pulling Frontend image..."
-                        docker pull frontenddivay.azurecr.io/frontend:latest
-
-                        echo "Stopping old Backend container..."
-                        docker stop backend || true
-
-                        echo "Removing old Backend container..."
-                        docker rm backend || true
-
-                        echo "Stopping old Frontend container..."
-                        docker stop frontend || true
-
-                        echo "Removing old Frontend container..."
-                        docker rm frontend || true
-
-                        echo "Starting Backend container..."
-
-                        docker run -d \
-                            --name backend \
-                            --restart unless-stopped \
-                            -p 8000:8000 \
-                            backenddivay.azurecr.io/backend:latest
-
-                        echo "Starting Frontend container..."
-
-                        docker run -d \
-                            --name frontend \
-                            --restart unless-stopped \
-                            -p 80:80 \
-                            frontenddivay.azurecr.io/frontend:latest
-
-                        echo "================================"
-                        echo " RUNNING CONTAINERS"
-                        echo "================================"
-
-                        docker ps
-
-                        echo "================================"
-                        echo " DEPLOYMENT SUCCESSFUL"
-                        echo "================================"
-
-                        EOF
-                    '''
-                }
+                sshPublisher(
+                    publishers: [
+                        sshPublisherDesc(
+                            configName: 'app-vm',
+                            verbose: true,
+                            transfers: [
+                                sshTransfer(
+                                    sourceFiles: '',
+                                    remoteDirectory: '',
+                                    execCommand: 'bash /home/azureuser/deploy.sh',
+                                    execTimeout: 120000,
+                                    flatten: false,
+                                    cleanRemote: false,
+                                    makeEmptyDirs: false
+                                )
+                            ],
+                            usePromotionTimestamp: false,
+                            useWorkspaceInPromotion: false,
+                            continueOnError: false,
+                            failOnError: true
+                        )
+                    ]
+                )
             }
         }
     }
 
     post {
-
         success {
             echo '''
             ============================================
             CI/CD SUCCESS
-            Backend and Frontend deployed successfully.
+            Backend and Frontend built, pushed and deployed.
             ============================================
             '''
         }
