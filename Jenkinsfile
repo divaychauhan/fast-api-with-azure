@@ -112,79 +112,92 @@ pipeline {
                 '''
             }
         }
-    }
+
         stage('Deploy to App VM') {
-    steps {
-        sshagent(['app-vm-ssh']) {
-            sh '''
-                set -e
+            steps {
+                sshagent(['app-vm-ssh']) {
 
-                echo "Connecting to App VM..."
+                    sh '''
+                        set -e
 
-                ssh -o StrictHostKeyChecking=no \
-                    azureuser@10.0.2.4 << 'EOF'
+                        echo "Connecting to App VM..."
 
-                set -e
+                        ssh -o StrictHostKeyChecking=no \
+                            azureuser@10.0.2.4 << 'EOF'
 
-                echo "===== APP VM DEPLOYMENT ====="
+                        set -e
 
-                echo "Logging into Azure..."
-                az login --identity
+                        echo "================================"
+                        echo " APP VM DEPLOYMENT STARTED"
+                        echo "================================"
 
-                echo "Logging into Backend ACR..."
-                az acr login --name backenddivay
+                        echo "Logging into Azure..."
+                        az login --identity
 
-                echo "Logging into Frontend ACR..."
-                az acr login --name frontenddivay
+                        echo "Logging into Backend ACR..."
+                        az acr login --name backenddivay
 
-                echo "Pulling Backend image..."
-                docker pull backenddivay.azurecr.io/backend:latest
+                        echo "Logging into Frontend ACR..."
+                        az acr login --name frontenddivay
 
-                echo "Pulling Frontend image..."
-                docker pull frontenddivay.azurecr.io/frontend:latest
+                        echo "Pulling Backend image..."
+                        docker pull backenddivay.azurecr.io/backend:latest
 
-                echo "Stopping old Backend container..."
-                docker stop backend || true
+                        echo "Pulling Frontend image..."
+                        docker pull frontenddivay.azurecr.io/frontend:latest
 
-                echo "Removing old Backend container..."
-                docker rm backend || true
+                        echo "Stopping old Backend container..."
+                        docker stop backend || true
 
-                echo "Stopping old Frontend container..."
-                docker stop frontend || true
+                        echo "Removing old Backend container..."
+                        docker rm backend || true
 
-                echo "Removing old Frontend container..."
-                docker rm frontend || true
+                        echo "Stopping old Frontend container..."
+                        docker stop frontend || true
 
-                echo "Starting Backend..."
-                docker run -d \
-                    --name backend \
-                    --restart unless-stopped \
-                    -p 8000:8000 \
-                    backenddivay.azurecr.io/backend:latest
+                        echo "Removing old Frontend container..."
+                        docker rm frontend || true
 
-                echo "Starting Frontend..."
-                docker run -d \
-                    --name frontend \
-                    --restart unless-stopped \
-                    -p 80:80 \
-                    frontenddivay.azurecr.io/frontend:latest
+                        echo "Starting Backend container..."
 
-                echo "===== CONTAINERS ====="
-                docker ps
+                        docker run -d \
+                            --name backend \
+                            --restart unless-stopped \
+                            -p 8000:8000 \
+                            backenddivay.azurecr.io/backend:latest
 
-                echo "===== DEPLOYMENT SUCCESSFUL ====="
+                        echo "Starting Frontend container..."
 
-                EOF
-            '''
+                        docker run -d \
+                            --name frontend \
+                            --restart unless-stopped \
+                            -p 80:80 \
+                            frontenddivay.azurecr.io/frontend:latest
+
+                        echo "================================"
+                        echo " RUNNING CONTAINERS"
+                        echo "================================"
+
+                        docker ps
+
+                        echo "================================"
+                        echo " DEPLOYMENT SUCCESSFUL"
+                        echo "================================"
+
+                        EOF
+                    '''
+                }
+            }
         }
     }
-}
+
     post {
+
         success {
             echo '''
             ============================================
             CI/CD SUCCESS
-            Backend and Frontend images pushed to ACR.
+            Backend and Frontend deployed successfully.
             ============================================
             '''
         }
